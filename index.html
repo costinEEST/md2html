@@ -1,0 +1,920 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      {
+        const s = localStorage.getItem("color-scheme");
+        if (s) document.querySelector('meta[name="color-scheme"]').content = s;
+      }
+    </script>
+    <title>md → html</title>
+    <style>
+      @layer reset, base, theme, layout, components;
+
+      @layer reset {
+        *,
+        *::before,
+        *::after {
+          box-sizing: border-box;
+        }
+        body {
+          margin: 0;
+        }
+        button {
+          cursor: pointer;
+        }
+        textarea {
+          field-sizing: content;
+        }
+      }
+
+      @layer theme {
+        :root {
+          /* Palette */
+          --blue-500: oklch(55% 0.18 250);
+          --blue-600: oklch(48% 0.18 250);
+          --blue-700: oklch(40% 0.18 250);
+          --gray-50: oklch(98% 0 0);
+          --gray-100: oklch(95% 0 0);
+          --gray-200: oklch(90% 0 0);
+          --gray-300: oklch(82% 0 0);
+          --gray-400: oklch(70% 0 0);
+          --gray-500: oklch(58% 0 0);
+          --gray-600: oklch(48% 0 0);
+          --gray-700: oklch(38% 0 0);
+          --gray-800: oklch(26% 0 0);
+          --gray-850: oklch(20% 0 0);
+          --gray-900: oklch(15% 0 0);
+
+          /* Semantic tokens — light-mode defaults */
+          --bg: var(--gray-100);
+          --surface: white;
+          --surface-subtle: var(--gray-50);
+          --border: var(--gray-200);
+          --text: var(--gray-900);
+          --text-subtle: var(--gray-500);
+          --accent: var(--blue-600);
+          --accent-hover: var(--blue-700);
+
+          /* Dark-mode overrides via media query (fallback) */
+          @media (prefers-color-scheme: dark) {
+            --bg: var(--gray-900);
+            --surface: var(--gray-850);
+            --surface-subtle: var(--gray-800);
+            --border: oklch(30% 0 0);
+            --text: var(--gray-100);
+            --text-subtle: var(--gray-400);
+            --accent: var(--blue-500);
+            --accent-hover: var(--blue-600);
+          }
+
+          /* light-dark() override where supported */
+          @supports (color: light-dark(white, black)) {
+            --bg: light-dark(var(--gray-100), var(--gray-900));
+            --surface: light-dark(white, var(--gray-850));
+            --surface-subtle: light-dark(var(--gray-50), var(--gray-800));
+            --border: light-dark(var(--gray-200), oklch(30% 0 0));
+            --text: light-dark(var(--gray-900), var(--gray-100));
+            --text-subtle: light-dark(var(--gray-500), var(--gray-400));
+            --accent: light-dark(var(--blue-600), var(--blue-500));
+            --accent-hover: light-dark(var(--blue-700), var(--blue-600));
+          }
+
+          color-scheme: light dark;
+          accent-color: var(--accent);
+
+          --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+          --font-mono: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
+          --radius: 5px;
+        }
+      }
+
+      @layer base {
+        html {
+          font-family: var(--font-sans);
+          font-size: 16px;
+          line-height: 1.5;
+          color: var(--text);
+          background: var(--bg);
+          block-size: 100dvh;
+          overflow: hidden;
+          color-scheme: light dark;
+          scrollbar-color: var(--border) transparent;
+        }
+
+        body {
+          display: grid;
+          grid-template-rows: auto 1fr;
+          block-size: 100%;
+          overflow: hidden;
+        }
+
+        .sr-only {
+          position: absolute;
+          inline-size: 1px;
+          block-size: 1px;
+          padding: 0;
+          margin: -1px;
+          overflow: hidden;
+          clip: rect(0, 0, 0, 0);
+          white-space: nowrap;
+          border: 0;
+        }
+      }
+
+      @layer layout {
+        .workspace {
+          display: grid;
+          grid-template-columns: 1fr 5px 1fr;
+          overflow: hidden;
+          min-block-size: 0;
+        }
+
+        .pane {
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          background: var(--surface);
+          border-inline-end: 1px solid var(--border);
+        }
+
+        .pane:last-child {
+          border-inline-end: none;
+        }
+
+        /* ── Mobile: stack vertically ── */
+        @media (max-width: 767px) {
+          .workspace {
+            grid-template-columns: 1fr;
+            grid-template-rows: 1fr 5px 1fr;
+          }
+
+          .pane {
+            border-inline-end: none;
+            border-block-end: 1px solid var(--border);
+          }
+
+          .pane:last-child {
+            border-block-end: none;
+          }
+        }
+
+        .pane-header {
+          display: flex;
+          align-items: stretch;
+          flex-shrink: 0;
+          background: var(--surface-subtle);
+          border-block-end: 1px solid var(--border);
+          min-block-size: 2.25rem;
+        }
+
+        .pane-label {
+          display: flex;
+          align-items: center;
+          padding-inline: 0.75rem;
+          font-size: 0.6875rem;
+          font-weight: 600;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          color: var(--text-subtle);
+        }
+
+        .pane-actions {
+          display: flex;
+          align-items: center;
+          gap: 0.125rem;
+          padding-inline: 0.25rem;
+          margin-inline-start: auto;
+        }
+      }
+
+      @layer components {
+        /* ── Header ── */
+        .site-header {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          padding: 0.4rem 0.75rem;
+          background: var(--surface);
+          border-block-end: 1px solid var(--border);
+          flex-shrink: 0;
+        }
+
+        .site-title {
+          font-size: 0.9375rem;
+          font-weight: 700;
+          color: var(--text);
+          letter-spacing: -0.01em;
+          margin-inline-end: auto;
+        }
+
+        /* ── Buttons ── */
+        .btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.375rem;
+          padding: 0.3125rem 0.625rem;
+          border-radius: var(--radius);
+          border: 1px solid var(--border);
+          background: var(--surface);
+          color: var(--text);
+          font: inherit;
+          font-size: 0.8125rem;
+          white-space: nowrap;
+          min-block-size: 1.875rem;
+          text-decoration: none;
+          transition:
+            background 0.1s,
+            border-color 0.1s;
+        }
+
+        .btn:hover:not(:disabled) {
+          background: var(--surface-subtle);
+        }
+
+        .btn:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: 2px;
+        }
+
+        .btn-primary {
+          background: var(--accent);
+          color: white;
+          border-color: transparent;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+          background: var(--accent-hover);
+        }
+
+        .btn-icon {
+          padding: 0.3125rem;
+          border: none;
+          background: transparent;
+          border-radius: var(--radius);
+          color: var(--text-subtle);
+          min-block-size: 1.875rem;
+          min-inline-size: 1.875rem;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .btn-icon:hover:not(:disabled) {
+          background: var(--border);
+          color: var(--text);
+        }
+
+        .btn-icon:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: 2px;
+        }
+
+        /* ── Editor ── */
+        .editor {
+          flex: 1;
+          resize: none;
+          border: none;
+          outline: none;
+          padding: 1rem;
+          font-family: var(--font-mono);
+          font-size: 0.875rem;
+          line-height: 1.65;
+          background: var(--surface);
+          color: var(--text);
+          min-block-size: 0;
+          overflow-y: auto;
+          scrollbar-gutter: stable;
+          overscroll-behavior: contain;
+          tab-size: 2;
+        }
+
+        /* ── Divider ── */
+        .divider {
+          background: var(--border);
+          cursor: col-resize;
+          flex-shrink: 0;
+          touch-action: none;
+          transition: background 0.15s;
+        }
+
+        .divider:hover,
+        .divider.is-dragging {
+          background: var(--accent);
+        }
+
+        @media (max-width: 767px) {
+          .divider {
+            cursor: row-resize;
+          }
+        }
+
+        /* ── Tabs ── */
+        .tabs {
+          display: flex;
+          align-items: flex-end;
+          padding-inline: 0.5rem;
+          gap: 0;
+        }
+
+        .tab {
+          padding: 0.25rem 0.625rem;
+          border: none;
+          background: transparent;
+          color: var(--text-subtle);
+          font: inherit;
+          font-size: 0.6875rem;
+          font-weight: 600;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+          border-radius: var(--radius) var(--radius) 0 0;
+          min-block-size: 2.25rem;
+        }
+
+        .tab:hover {
+          color: var(--text);
+        }
+
+        .tab:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: -2px;
+        }
+
+        .tab[aria-selected="true"] {
+          color: var(--text);
+          background: var(--surface);
+          box-shadow: inset 0 -2px 0 var(--accent);
+        }
+
+        /* ── Preview / Raw output ── */
+        .panel-preview,
+        .panel-raw {
+          flex: 1;
+          min-block-size: 0;
+          overflow-y: auto;
+          scrollbar-gutter: stable;
+          overscroll-behavior: contain;
+        }
+
+        .panel-preview {
+          padding: 1.5rem 2rem;
+        }
+
+        .panel-raw {
+          padding: 1rem;
+          font-family: var(--font-mono);
+          font-size: 0.8125rem;
+          line-height: 1.65;
+          background: var(--surface);
+          color: var(--text);
+          white-space: pre-wrap;
+          word-break: break-all;
+          margin: 0;
+        }
+
+        [hidden] {
+          display: none !important;
+        }
+
+        /* ── Stats bar ── */
+        .stats-bar {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+          padding: 0.1875rem 0.75rem;
+          background: var(--surface-subtle);
+          border-block-start: 1px solid var(--border);
+          font-size: 0.6875rem;
+          color: var(--text-subtle);
+          flex-shrink: 0;
+        }
+
+        /* ── Drop overlay ── */
+        .drop-overlay {
+          display: none;
+          position: fixed;
+          inset: 0;
+          z-index: 200;
+          align-items: center;
+          justify-content: center;
+          font-size: 1.25rem;
+          font-weight: 600;
+          color: var(--accent);
+          background: color-mix(in oklab, var(--accent) 12%, transparent);
+          border: 3px dashed var(--accent);
+          pointer-events: none;
+        }
+
+        .drop-overlay.is-active {
+          display: flex;
+        }
+
+        /* ── Copy feedback ── */
+        .copy-feedback {
+          font-size: 0.75rem;
+          color: oklch(55% 0.14 145);
+          opacity: 0;
+          transition: opacity 0.2s;
+          pointer-events: none;
+        }
+
+        .copy-feedback.is-visible {
+          opacity: 1;
+        }
+
+        /* ── File label ── */
+        .file-label {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.375rem;
+          padding: 0.3125rem 0.625rem;
+          border-radius: var(--radius);
+          border: 1px solid var(--border);
+          background: var(--surface);
+          color: var(--text);
+          font: inherit;
+          font-size: 0.8125rem;
+          white-space: nowrap;
+          min-block-size: 1.875rem;
+          cursor: pointer;
+          transition: background 0.1s;
+        }
+
+        .file-label:hover {
+          background: var(--surface-subtle);
+        }
+        .file-label:focus-within {
+          outline: 2px solid var(--accent);
+          outline-offset: 2px;
+        }
+
+        /* ── Mobile header: icon-only buttons ── */
+        @media (max-width: 767px) {
+          .site-header {
+            gap: 0.375rem;
+            padding: 0.375rem 0.5rem;
+          }
+          .btn-label {
+            display: none;
+          }
+          .copy-feedback {
+            display: none;
+          }
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <span class="site-title">md → html</span>
+
+      <label class="file-label" title="Open a .md file">
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+        </svg>
+        <span class="btn-label">Open .md</span>
+        <input class="sr-only" type="file" accept=".md,.markdown,.txt" id="file-input" />
+      </label>
+
+      <button type="button" class="btn" id="copy-btn">
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true">
+          <rect x="9" y="9" width="13" height="13" rx="2" />
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+        </svg>
+        <span class="btn-label">Copy HTML</span>
+      </button>
+      <span class="copy-feedback" id="copy-feedback" aria-live="polite">Copied!</span>
+
+      <button type="button" class="btn btn-primary" id="download-btn">
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          aria-hidden="true">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="12" y1="15" x2="12" y2="3" />
+        </svg>
+        <span class="btn-label">Download</span>
+      </button>
+
+      <button type="button" class="btn-icon" id="theme-btn" aria-label="Toggle dark mode" title="Toggle dark mode">
+        <!-- icon set by JS -->
+      </button>
+    </header>
+
+    <main class="workspace" id="workspace">
+      <!-- Left: Markdown editor -->
+      <section class="pane" aria-label="Markdown input">
+        <div class="pane-header">
+          <span class="pane-label">Markdown</span>
+          <div class="pane-actions">
+            <button
+              type="button"
+              class="btn-icon"
+              id="reset-btn"
+              aria-label="Reset to sample"
+              title="Reset to sample content">
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                aria-hidden="true">
+                <polyline points="1 4 1 10 7 10" />
+                <path d="M3.51 15a9 9 0 1 0 .49-4.17" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <textarea
+          class="editor"
+          id="editor"
+          spellcheck="false"
+          autocorrect="off"
+          autocapitalize="off"
+          aria-label="Markdown content"></textarea>
+
+        <div class="stats-bar" aria-live="polite" aria-atomic="true">
+          <span id="stat-words">0 words</span>
+          <span id="stat-chars">0 chars</span>
+          <span id="stat-time">~0 min read</span>
+        </div>
+      </section>
+
+      <!-- Resize handle -->
+      <div
+        class="divider"
+        id="divider"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Drag to resize panels"
+        tabindex="0"></div>
+
+      <!-- Right / Bottom: Preview / Raw -->
+      <section class="pane" aria-label="HTML output">
+        <div class="pane-header" style="padding: 0">
+          <div class="tabs" role="tablist" aria-label="Output view">
+            <button
+              type="button"
+              class="tab"
+              role="tab"
+              id="tab-preview"
+              aria-selected="true"
+              aria-controls="panel-preview">
+              Preview
+            </button>
+            <button type="button" class="tab" role="tab" id="tab-raw" aria-selected="false" aria-controls="panel-raw">
+              HTML
+            </button>
+          </div>
+          <div class="pane-actions">
+            <!-- intentionally empty; copy/download in header -->
+          </div>
+        </div>
+
+        <div class="panel-preview" id="panel-preview" role="tabpanel" aria-labelledby="tab-preview">
+          <div id="preview-body"></div>
+        </div>
+
+        <pre
+          class="panel-raw"
+          id="panel-raw"
+          role="tabpanel"
+          aria-labelledby="tab-raw"
+          tabindex="0"
+          hidden><code id="raw-body"></code></pre>
+      </section>
+    </main>
+
+    <!-- Drag-and-drop overlay -->
+    <div class="drop-overlay" id="drop-overlay" aria-hidden="true">Drop .md file here</div>
+
+    <script type="module">
+      import { marked } from "https://cdnjs.cloudflare.com/ajax/libs/marked/16.3.0/lib/marked.esm.min.js";
+
+      // ── DOM refs ─────────────────────────────────────────────────────────────
+      const editor = document.getElementById("editor");
+      const previewBody = document.getElementById("preview-body");
+      const rawBody = document.getElementById("raw-body");
+      const copyBtn = document.getElementById("copy-btn");
+      const copyFeedback = document.getElementById("copy-feedback");
+      const downloadBtn = document.getElementById("download-btn");
+      const resetBtn = document.getElementById("reset-btn");
+      const fileInput = document.getElementById("file-input");
+      const themeBtn = document.getElementById("theme-btn");
+      const tabPreview = document.getElementById("tab-preview");
+      const tabRaw = document.getElementById("tab-raw");
+      const panelPreview = document.getElementById("panel-preview");
+      const panelRaw = document.getElementById("panel-raw");
+      const dropOverlay = document.getElementById("drop-overlay");
+      const workspace = document.getElementById("workspace");
+      const divider = document.getElementById("divider");
+      const statWords = document.getElementById("stat-words");
+      const statChars = document.getElementById("stat-chars");
+      const statTime = document.getElementById("stat-time");
+      const colorMeta = document.querySelector('meta[name="color-scheme"]');
+
+      // ── Marked setup ────────────────────────────────────────────────────────
+      marked.use({ gfm: true, breaks: false });
+
+      // ── Init ────────────────────────────────────────────────────────────────
+      function init() {
+        editor.value = localStorage.getItem("md2html-content") || "";
+        render();
+        updateStats();
+        updateThemeIcon();
+      }
+
+      // ── Render ───────────────────────────────────────────────────────────────
+      function render() {
+        const html = marked.parse(editor.value);
+        previewBody.innerHTML = html;
+        rawBody.textContent = html;
+        localStorage.setItem("md2html-content", editor.value);
+      }
+
+      // ── Stats ────────────────────────────────────────────────────────────────
+      function updateStats() {
+        const text = editor.value;
+        const chars = text.length;
+        const words = text.trim() === "" ? 0 : text.trim().split(/\s+/).length;
+        const mins = Math.max(1, Math.ceil(words / 200));
+        statWords.textContent = `${words.toLocaleString()} word${words !== 1 ? "s" : ""}`;
+        statChars.textContent = `${chars.toLocaleString()} char${chars !== 1 ? "s" : ""}`;
+        statTime.textContent = `~${mins} min read`;
+      }
+
+      // ── Editor events ────────────────────────────────────────────────────────
+      let renderTimer;
+      editor.addEventListener("input", () => {
+        updateStats();
+        clearTimeout(renderTimer);
+        renderTimer = setTimeout(render, 120);
+      });
+
+      // ── Tab switching ────────────────────────────────────────────────────────
+      function switchTab(name) {
+        const isPreview = name === "preview";
+        tabPreview.setAttribute("aria-selected", String(isPreview));
+        tabRaw.setAttribute("aria-selected", String(!isPreview));
+        if (isPreview) {
+          panelPreview.removeAttribute("hidden");
+          panelRaw.setAttribute("hidden", "");
+        } else {
+          panelRaw.removeAttribute("hidden");
+          panelPreview.setAttribute("hidden", "");
+        }
+      }
+
+      tabPreview.addEventListener("click", () => switchTab("preview"));
+      tabRaw.addEventListener("click", () => switchTab("raw"));
+
+      // ── Copy ─────────────────────────────────────────────────────────────────
+      let copyTimer;
+      copyBtn.addEventListener("click", async () => {
+        await navigator.clipboard.writeText(rawBody.textContent);
+        copyFeedback.classList.add("is-visible");
+        clearTimeout(copyTimer);
+        copyTimer = setTimeout(() => copyFeedback.classList.remove("is-visible"), 2000);
+      });
+
+      // ── Download ─────────────────────────────────────────────────────────────
+      downloadBtn.addEventListener("click", () => {
+        const doc = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Document</title>
+</head>
+<body>
+${rawBody.textContent}
+</body>
+</html>`;
+        const blob = new Blob([doc], { type: "text/html" });
+        const url = URL.createObjectURL(blob);
+        const a = Object.assign(document.createElement("a"), { href: url, download: "document.html" });
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+
+      // ── Reset ────────────────────────────────────────────────────────────────
+      resetBtn.addEventListener("click", () => {
+        editor.value = "";
+        render();
+        updateStats();
+      });
+
+      // ── File open ────────────────────────────────────────────────────────────
+      fileInput.addEventListener("change", () => {
+        if (fileInput.files[0]) loadFile(fileInput.files[0]);
+        fileInput.value = "";
+      });
+
+      function loadFile(file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          editor.value = e.target.result;
+          render();
+          updateStats();
+        };
+        reader.readAsText(file);
+      }
+
+      // ── Drag and drop ────────────────────────────────────────────────────────
+      let dragDepth = 0;
+
+      document.addEventListener("dragenter", (e) => {
+        if (!e.dataTransfer.types.includes("Files")) return;
+        dragDepth++;
+        dropOverlay.classList.add("is-active");
+        dropOverlay.removeAttribute("aria-hidden");
+      });
+
+      document.addEventListener("dragleave", () => {
+        if (--dragDepth === 0) {
+          dropOverlay.classList.remove("is-active");
+          dropOverlay.setAttribute("aria-hidden", "true");
+        }
+      });
+
+      document.addEventListener("dragover", (e) => e.preventDefault());
+
+      document.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dragDepth = 0;
+        dropOverlay.classList.remove("is-active");
+        dropOverlay.setAttribute("aria-hidden", "true");
+        if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+      });
+
+      // ── Dark mode toggle ─────────────────────────────────────────────────────
+      const SUN = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`;
+      const MOON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`;
+
+      function isDarkActive() {
+        const scheme = colorMeta.content;
+        if (scheme === "dark") return true;
+        if (scheme === "light") return false;
+        return window.matchMedia("(prefers-color-scheme: dark)").matches;
+      }
+
+      function updateThemeIcon() {
+        const dark = isDarkActive();
+        themeBtn.innerHTML = dark ? SUN : MOON;
+        themeBtn.title = dark ? "Switch to light mode" : "Switch to dark mode";
+        themeBtn.setAttribute("aria-label", themeBtn.title);
+      }
+
+      function applyScheme(scheme) {
+        colorMeta.content = scheme;
+        document.documentElement.style.colorScheme = scheme;
+        localStorage.setItem("color-scheme", scheme);
+        updateThemeIcon();
+      }
+
+      themeBtn.addEventListener("click", () => {
+        const pinned = colorMeta.content;
+        if (pinned === "light dark") {
+          // System default → pin to opposite of current system
+          applyScheme(isDarkActive() ? "light" : "dark");
+        } else {
+          // Pinned → reset to system
+          applyScheme("light dark");
+        }
+      });
+
+      window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", updateThemeIcon);
+
+      // Restore any saved scheme to CSS as well (meta was already set by inline script)
+      {
+        const saved = localStorage.getItem("color-scheme");
+        if (saved) document.documentElement.style.colorScheme = saved;
+      }
+
+      // ── Resizable divider ────────────────────────────────────────────────────
+      let resizing = false;
+      let resizeStart = 0;
+      let resizeStartSizes = [0, 0];
+
+      const isMobile = () => window.innerWidth < 768;
+
+      function parseSizes() {
+        const prop = isMobile() ? "gridTemplateRows" : "gridTemplateColumns";
+        return getComputedStyle(workspace)[prop].split(" ").map(parseFloat);
+      }
+
+      function applyResize(first, second) {
+        if (isMobile()) {
+          workspace.style.gridTemplateRows = `${first}px 5px ${second}px`;
+          workspace.style.gridTemplateColumns = "";
+        } else {
+          workspace.style.gridTemplateColumns = `${first}px 5px ${second}px`;
+          workspace.style.gridTemplateRows = "";
+        }
+      }
+
+      function startResize(clientX, clientY) {
+        resizing = true;
+        resizeStart = isMobile() ? clientY : clientX;
+        const sizes = parseSizes();
+        resizeStartSizes = [sizes[0], sizes[2]];
+        divider.classList.add("is-dragging");
+        document.body.style.cursor = isMobile() ? "row-resize" : "col-resize";
+        document.body.style.userSelect = "none";
+      }
+
+      divider.addEventListener("mousedown", (e) => startResize(e.clientX, e.clientY));
+      divider.addEventListener("touchstart", (e) => startResize(e.touches[0].clientX, e.touches[0].clientY), {
+        passive: true,
+      });
+
+      document.addEventListener("mousemove", (e) => {
+        if (!resizing) return;
+        const delta = (isMobile() ? e.clientY : e.clientX) - resizeStart;
+        const total = resizeStartSizes[0] + resizeStartSizes[1];
+        const MIN = isMobile() ? 80 : 180;
+        const first = Math.max(MIN, Math.min(total - MIN, resizeStartSizes[0] + delta));
+        applyResize(first, total - first);
+      });
+
+      document.addEventListener(
+        "touchmove",
+        (e) => {
+          if (!resizing) return;
+          const delta = (isMobile() ? e.touches[0].clientY : e.touches[0].clientX) - resizeStart;
+          const total = resizeStartSizes[0] + resizeStartSizes[1];
+          const MIN = isMobile() ? 80 : 180;
+          const first = Math.max(MIN, Math.min(total - MIN, resizeStartSizes[0] + delta));
+          applyResize(first, total - first);
+        },
+        { passive: true },
+      );
+
+      function stopResize() {
+        if (!resizing) return;
+        resizing = false;
+        divider.classList.remove("is-dragging");
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      }
+
+      document.addEventListener("mouseup", stopResize);
+      document.addEventListener("touchend", stopResize);
+
+      // Keyboard resize: ←/→ on desktop, ↑/↓ on mobile; Shift = larger step
+      divider.addEventListener("keydown", (e) => {
+        const mobile = isMobile();
+        const isForward = e.key === (mobile ? "ArrowDown" : "ArrowRight");
+        const isBackward = e.key === (mobile ? "ArrowUp" : "ArrowLeft");
+        if (!isForward && !isBackward) return;
+        e.preventDefault();
+        const sizes = parseSizes();
+        const total = sizes[0] + sizes[2];
+        const step = e.shiftKey ? 50 : 10;
+        const MIN = mobile ? 80 : 180;
+        const first = Math.max(MIN, Math.min(total - MIN, sizes[0] + (isForward ? step : -step)));
+        applyResize(first, total - first);
+      });
+
+      // Reset manual resize when crossing the mobile/desktop breakpoint
+      let wasMobile = isMobile();
+      window.addEventListener("resize", () => {
+        const nowMobile = isMobile();
+        if (nowMobile !== wasMobile) {
+          workspace.style.gridTemplateColumns = "";
+          workspace.style.gridTemplateRows = "";
+          wasMobile = nowMobile;
+        }
+      });
+
+      // ── Start ────────────────────────────────────────────────────────────────
+      init();
+    </script>
+  </body>
+</html>
