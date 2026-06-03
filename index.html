@@ -363,6 +363,72 @@
           padding: 1.5rem 2rem;
         }
 
+        /* ── Preview content styles ── */
+        #preview-body {
+          max-inline-size: 72ch;
+        }
+
+        #preview-body img {
+          max-inline-size: 100%;
+          height: auto;
+        }
+
+        #preview-body pre {
+          overflow-x: auto;
+          padding: 1rem;
+          border-radius: var(--radius);
+          background: var(--surface-subtle);
+        }
+
+        #preview-body code {
+          font-family: var(--font-mono);
+          font-size: 0.875em;
+          background: var(--surface-subtle);
+          padding: 0.15em 0.35em;
+          border-radius: 3px;
+        }
+
+        #preview-body pre code {
+          background: none;
+          padding: 0;
+          font-size: 1em;
+        }
+
+        #preview-body table {
+          border-collapse: collapse;
+          display: block;
+          overflow-x: auto;
+          inline-size: 100%;
+        }
+
+        #preview-body th,
+        #preview-body td {
+          border: 1px solid var(--border);
+          padding: 0.375rem 0.5rem;
+          text-align: left;
+        }
+
+        #preview-body th {
+          background: var(--surface-subtle);
+          font-weight: 600;
+        }
+
+        #preview-body blockquote {
+          margin-inline: 0;
+          padding-inline-start: 1rem;
+          border-inline-start: 3px solid var(--border);
+          color: var(--text-subtle);
+        }
+
+        #preview-body a {
+          color: var(--accent);
+        }
+
+        #preview-body hr {
+          border: none;
+          border-block-start: 1px solid var(--border);
+        }
+
         .panel-raw {
           padding: 1rem;
           font-family: var(--font-mono);
@@ -530,12 +596,7 @@
         <div class="pane-header">
           <span class="pane-label">Markdown</span>
           <div class="pane-actions">
-            <button
-              type="button"
-              class="btn-icon"
-              id="reset-btn"
-              aria-label="Reset to sample"
-              title="Reset to sample content">
+            <button type="button" class="btn-icon" id="reset-btn" aria-label="Clear editor" title="Clear editor">
               <svg
                 width="13"
                 height="13"
@@ -614,6 +675,7 @@
     <!-- Drag-and-drop overlay -->
     <div class="drop-overlay" id="drop-overlay" aria-hidden="true">Drop .md file here</div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.7/purify.min.js"></script>
     <script type="module">
       import { marked } from "https://cdnjs.cloudflare.com/ajax/libs/marked/16.3.0/lib/marked.esm.min.js";
 
@@ -642,9 +704,27 @@
       // ── Marked setup ────────────────────────────────────────────────────────
       marked.use({ gfm: true, breaks: false });
 
+      // ── Safe localStorage ────────────────────────────────────────────────────
+      const safeStorage = {
+        get(key) {
+          try {
+            return localStorage.getItem(key);
+          } catch {
+            return null;
+          }
+        },
+        set(key, value) {
+          try {
+            localStorage.setItem(key, value);
+          } catch {
+            /* ignore */
+          }
+        },
+      };
+
       // ── Init ────────────────────────────────────────────────────────────────
       function init() {
-        editor.value = localStorage.getItem("md2html-content") || "";
+        editor.value = safeStorage.get("md2html-content") || "";
         render();
         updateStats();
         updateThemeIcon();
@@ -653,9 +733,16 @@
       // ── Render ───────────────────────────────────────────────────────────────
       function render() {
         const html = marked.parse(editor.value);
-        previewBody.innerHTML = html;
+        previewBody.innerHTML = DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
         rawBody.textContent = html;
-        localStorage.setItem("md2html-content", editor.value);
+        safeStorage.set("md2html-content", editor.value);
+        return html;
+      }
+
+      // Force an immediate render and return the current HTML (bypasses debounce)
+      function getCurrentHtml() {
+        clearTimeout(renderTimer);
+        return render();
       }
 
       // ── Stats ────────────────────────────────────────────────────────────────
@@ -681,23 +768,51 @@
       function switchTab(name) {
         const isPreview = name === "preview";
         tabPreview.setAttribute("aria-selected", String(isPreview));
+        tabPreview.tabIndex = isPreview ? 0 : -1;
         tabRaw.setAttribute("aria-selected", String(!isPreview));
-        if (isPreview) {
-          panelPreview.removeAttribute("hidden");
-          panelRaw.setAttribute("hidden", "");
-        } else {
-          panelRaw.removeAttribute("hidden");
-          panelPreview.setAttribute("hidden", "");
-        }
+        tabRaw.tabIndex = isPreview ? -1 : 0;
+        panelPreview.hidden = !isPreview;
+        panelRaw.hidden = isPreview;
       }
 
       tabPreview.addEventListener("click", () => switchTab("preview"));
       tabRaw.addEventListener("click", () => switchTab("raw"));
 
+      [tabPreview, tabRaw].forEach((tab) => {
+        tab.addEventListener("keydown", (e) => {
+          if (!["ArrowLeft", "ArrowRight"].includes(e.key)) return;
+          e.preventDefault();
+          const next = tab === tabPreview ? tabRaw : tabPreview;
+          next.focus();
+          switchTab(next === tabPreview ? "preview" : "raw");
+        });
+      });
+
       // ── Copy ─────────────────────────────────────────────────────────────────
+      function fallbackCopy(text) {
+        const ta = Object.assign(document.createElement("textarea"), {
+          value: text,
+          style: "position:fixed;opacity:0",
+        });
+        document.body.append(ta);
+        ta.select();
+        const ok = document.execCommand("copy");
+        ta.remove();
+        if (!ok) throw new Error("copy failed");
+      }
+
       let copyTimer;
       copyBtn.addEventListener("click", async () => {
-        await navigator.clipboard.writeText(rawBody.textContent);
+        const html = getCurrentHtml();
+        try {
+          await navigator.clipboard.writeText(html);
+        } catch {
+          try {
+            fallbackCopy(html);
+          } catch {
+            return;
+          }
+        }
         copyFeedback.classList.add("is-visible");
         clearTimeout(copyTimer);
         copyTimer = setTimeout(() => copyFeedback.classList.remove("is-visible"), 2000);
@@ -705,17 +820,18 @@
 
       // ── Download ─────────────────────────────────────────────────────────────
       downloadBtn.addEventListener("click", () => {
+        const html = getCurrentHtml();
         const doc = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Document</title>
-</head>
-<body>
-${rawBody.textContent}
-</body>
-</html>`;
+                      <html lang="en">
+                      <head>
+                      <meta charset="utf-8">
+                      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                      <title>Document</title>
+                      </head>
+                      <body>
+                      ${html}
+                      </body>
+                    </html>`;
         const blob = new Blob([doc], { type: "text/html" });
         const url = URL.createObjectURL(blob);
         const a = Object.assign(document.createElement("a"), { href: url, download: "document.html" });
@@ -736,13 +852,26 @@ ${rawBody.textContent}
         fileInput.value = "";
       });
 
+      function isAllowedFile(file) {
+        return /\.(md|markdown|txt)$/i.test(file.name) || file.type.startsWith("text/");
+      }
+
       function loadFile(file) {
+        if (!isAllowedFile(file)) {
+          alert("Please choose a Markdown or plain text file.");
+          return;
+        }
+        if (file.size > 2_000_000) {
+          alert("File exceeds the 2 MB limit.");
+          return;
+        }
         const reader = new FileReader();
         reader.onload = (e) => {
-          editor.value = e.target.result;
+          editor.value = String(e.target.result || "");
           render();
           updateStats();
         };
+        reader.onerror = () => alert("Could not read the file.");
         reader.readAsText(file);
       }
 
@@ -794,7 +923,7 @@ ${rawBody.textContent}
       function applyScheme(scheme) {
         colorMeta.content = scheme;
         document.documentElement.style.colorScheme = scheme;
-        localStorage.setItem("color-scheme", scheme);
+        safeStorage.set("color-scheme", scheme);
         updateThemeIcon();
       }
 
@@ -813,7 +942,7 @@ ${rawBody.textContent}
 
       // Restore any saved scheme to CSS as well (meta was already set by inline script)
       {
-        const saved = localStorage.getItem("color-scheme");
+        const saved = safeStorage.get("color-scheme");
         if (saved) document.documentElement.style.colorScheme = saved;
       }
 
@@ -839,42 +968,17 @@ ${rawBody.textContent}
         }
       }
 
-      function startResize(clientX, clientY) {
-        resizing = true;
-        resizeStart = isMobile() ? clientY : clientX;
-        const sizes = parseSizes();
-        resizeStartSizes = [sizes[0], sizes[2]];
-        divider.classList.add("is-dragging");
-        document.body.style.cursor = isMobile() ? "row-resize" : "col-resize";
-        document.body.style.userSelect = "none";
+      function updateDividerOrientation() {
+        divider.setAttribute("aria-orientation", isMobile() ? "horizontal" : "vertical");
       }
 
-      divider.addEventListener("mousedown", (e) => startResize(e.clientX, e.clientY));
-      divider.addEventListener("touchstart", (e) => startResize(e.touches[0].clientX, e.touches[0].clientY), {
-        passive: true,
-      });
-
-      document.addEventListener("mousemove", (e) => {
-        if (!resizing) return;
-        const delta = (isMobile() ? e.clientY : e.clientX) - resizeStart;
+      function updateResize(clientX, clientY) {
+        const delta = (isMobile() ? clientY : clientX) - resizeStart;
         const total = resizeStartSizes[0] + resizeStartSizes[1];
         const MIN = isMobile() ? 80 : 180;
         const first = Math.max(MIN, Math.min(total - MIN, resizeStartSizes[0] + delta));
         applyResize(first, total - first);
-      });
-
-      document.addEventListener(
-        "touchmove",
-        (e) => {
-          if (!resizing) return;
-          const delta = (isMobile() ? e.touches[0].clientY : e.touches[0].clientX) - resizeStart;
-          const total = resizeStartSizes[0] + resizeStartSizes[1];
-          const MIN = isMobile() ? 80 : 180;
-          const first = Math.max(MIN, Math.min(total - MIN, resizeStartSizes[0] + delta));
-          applyResize(first, total - first);
-        },
-        { passive: true },
-      );
+      }
 
       function stopResize() {
         if (!resizing) return;
@@ -884,8 +988,25 @@ ${rawBody.textContent}
         document.body.style.userSelect = "";
       }
 
-      document.addEventListener("mouseup", stopResize);
-      document.addEventListener("touchend", stopResize);
+      divider.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        divider.setPointerCapture(e.pointerId);
+        resizing = true;
+        resizeStart = isMobile() ? e.clientY : e.clientX;
+        const sizes = parseSizes();
+        resizeStartSizes = [sizes[0], sizes[2]];
+        divider.classList.add("is-dragging");
+        document.body.style.cursor = isMobile() ? "row-resize" : "col-resize";
+        document.body.style.userSelect = "none";
+      });
+
+      divider.addEventListener("pointermove", (e) => {
+        if (!resizing) return;
+        updateResize(e.clientX, e.clientY);
+      });
+
+      divider.addEventListener("pointerup", stopResize);
+      divider.addEventListener("pointercancel", stopResize);
 
       // Keyboard resize: ←/→ on desktop, ↑/↓ on mobile; Shift = larger step
       divider.addEventListener("keydown", (e) => {
@@ -904,12 +1025,14 @@ ${rawBody.textContent}
 
       // Reset manual resize when crossing the mobile/desktop breakpoint
       let wasMobile = isMobile();
+      updateDividerOrientation();
       window.addEventListener("resize", () => {
         const nowMobile = isMobile();
         if (nowMobile !== wasMobile) {
           workspace.style.gridTemplateColumns = "";
           workspace.style.gridTemplateRows = "";
           wasMobile = nowMobile;
+          updateDividerOrientation();
         }
       });
 
